@@ -1,0 +1,24 @@
+# 核心规则：所有文本文件自动检测，强制用LF换行符
+* text=auto eol=lf
+
+# 可选：细分指定代码文件（精准控制，避免误处理二进制文件）
+*.c text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.go text eol=lf
+*.java text eol=lf
+*.md text eol=lf
+
+# 二进制文件（图片、压缩包等）不处理换行符
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary

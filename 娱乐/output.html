@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>钻石贬值惊呆，小沈阳敬酒太真实</title>
+    <style>
+        :root {
+            /* 配色方案：现代紫金 (娱乐风格) */
+            --primary-color: #5d35b0; /* 深紫色 */
+            --secondary-color: #e91e63; /* 玫红色 */
+            --accent-color: #9c27b0; /* 紫色 */
+            --bg-color: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-main: #2c3e50;
+            --text-secondary: #7f8c8d;
+            --divider: #ecf0f1;
+            
+            --font-family-base: "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            --radius-lg: 16px;
+        }
+
+        body {
+            margin: 0;
+            padding: 40px;
+            font-family: var(--font-family-base);
+            background-color: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 720px;
+            height: 1600px; /* 9:20 比例 (720 * 20 / 9 ≈ 1600) */
+            background-color: var(--card-bg);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 顶部设计 */
+        .header {
+            background: linear-gradient(135deg, #5d35b0 0%, #e91e63 100%); /* 紫色渐变 */
+            color: white;
+            padding: 30px 40px; /* 减少内边距 */
+            position: relative;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        /* 装饰背景圆圈 */
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50px;
+            right: -50px;
+            width: 200px;
+            height: 200px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 20px;
+        }
+
+        .brand-title {
+            font-size: 52px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            margin: 0;
+            line-height: 1.15;
+        }
+
+        .brand-title span {
+            color: #ffeb3b; /* 亮黄色点缀 */
+            font-size: 56px;
+            margin: 0 5px;
+            display: inline-block;
+            transform: translateY(4px);
+        }
+
+        .brand-title .brand-60s {
+            color: #ff8a00;
+            font-size: 74px;
+            font-weight: 900;
+            margin: 0 8px 0 0;
+            transform: translateY(6px);
+            text-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+        }
+
+        .date-badge {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 12px 25px;
+            border-radius: 16px;
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .date-day {
+            font-size: 48px;
+            font-weight: 800;
+            display: block;
+            line-height: 1;
+            margin-bottom: 8px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .date-full {
+            font-size: 18px;
+            opacity: 0.95;
+            font-weight: 500;
+            letter-spacing: 1px;
+        }
+
+        .lunar-info {
+            background: rgba(0, 0, 0, 0.2);
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            margin-top: 10px;
+            font-weight: 500;
+        }
+
+        /* 内容列表 */
+        .content {
+            padding: 20px 40px; /* 减少内边距 */
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center; /* 内容垂直居中分布 */
+        }
+
+        .news-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 100%;
+        }
+
+        .news-item {
+            display: flex;
+            margin-bottom: 0; /* 由 flex justify-content 控制间距 */
+            align-items: center; /* 垂直居中 */
+            line-height: 1.4;
+        }
+
+        .news-index {
+            flex-shrink: 0;
+            width: 34px; 
+            height: 34px;
+            background: #eef2f7;
+            color: var(--primary-color);
+            border-radius: 8px;
+            text-align: center;
+            line-height: 34px;
+            font-size: 20px;
+            font-weight: 800;
+            margin-right: 15px;
+            margin-top: 0; /* 垂直居中不需要 top margin */
+            font-family: 'Arial', sans-serif;
+        }
+
+        .news-item:nth-child(-n+3) .news-index {
+            background: var(--secondary-color);
+            color: white;
+            box-shadow: 0 4px 10px rgba(233, 30, 99, 0.3);
+        }
+
+        .news-text {
+            font-size: 20px;
+            color: #34495e;
+            text-align: left;
+            font-weight: 500;
+            flex: 1; /* 占据剩余空间 */
+            min-width: 0; /* 允许 flex 子项缩小以触发 text-overflow */
+        }
+
+        .news-title {
+            font-size: 23px; 
+            font-weight: 700; 
+            color: #2c3e50; 
+            margin-bottom: 4px; 
+            line-height: 1.3;
+        }
+
+        .news-summary {
+            font-size: 18px; 
+            color: #666; 
+            font-weight: 400; 
+            white-space: nowrap; /* 强制不换行 */
+            overflow: hidden;    /* 隐藏溢出内容 */
+            text-overflow: ellipsis; /* 显示省略号 */
+            width: 100%;
+        }
+
+        /* 底部 */
+        .footer {
+            background-color: #fafafa;
+            padding: 20px 40px 30px; /* 减少底部留白 */
+            border-top: 1px solid #eee;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .quote-box {
+            position: relative;
+            margin: 0; /* 移除底部 margin，因为没有其他内容了 */
+            padding: 0 20px;
+        }
+
+        .quote-text {
+            font-size: 22px;
+            color: #57606f;
+            font-style: italic;
+            font-weight: 600;
+            line-height: 1.55;
+        }
+
+        .quote-text::before, .quote-text::after {
+            content: '"';
+            font-size: 40px;
+            color: #ddd;
+            position: absolute;
+            font-family: serif;
+        }
+        
+        .quote-text::before {
+            top: -20px;
+            left: -10px;
+        }
+        
+        .quote-text::after {
+            bottom: -40px;
+            right: -10px;
+            line-height: 1;
+        }
+
+        .meta-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: #95a5a6;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px dashed #e0e0e0;
+        }
+
+        .tech-pill {
+            background: #fff;
+            border: 1px solid #eee;
+            padding: 4px 10px;
+            border-radius: 12px;
+            margin-left: 5px;
+        }
+
+        /* 解决底部信息不存在时的渲染问题 */
+        .meta-left, .meta-right {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .meta-left { text-align: left; }
+        .meta-right { text-align: right; }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-top">
+                <h1 class="brand-title"><span class="brand-60s">60s</span>晚间闲读</h1>
+                <div class="date-badge">
+                    <span class="date-day">星期日</span>
+                    <span class="date-full">2026年01月18日</span>
+                </div>
+            </div>
+            <div class="lunar-info">
+                农历 · 乙巳年十一月廿六 ☀
+            </div>
+        </div>
+
+        <!-- News Content -->
+        <div class="content">
+            <ul class="news-list">
+                
+                <li class="news-item">
+                    <div class="news-index">1</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">14万钻石如今不值200块</div>
+                            <div class="news-summary">女子吐槽钻石保值神话破灭；高价买入如今回收价太扎心。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">2</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">小沈阳拒合影被赵本山罚酒</div>
+                            <div class="news-summary">小沈阳拒合影被师父要求道歉；赵本山现场教学人情世故。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">3</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">U23国足点球大战进四强</div>
+                            <div class="news-summary">中国点球淘汰乌兹别克斯坦；小伙子们这次真硬气。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">4</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">古天乐每晚照美黑灯拍戏</div>
+                            <div class="news-summary">古天乐为肤色坚持照美黑灯；长期使用真的健康吗？</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">5</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">钟楚曦被称生图界严厉母亲</div>
+                            <div class="news-summary">网友吐槽钟楚曦生图太严格；这美貌水平也是凡尔赛。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">6</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">短剧淋雨婴儿片酬仅800元</div>
+                            <div class="news-summary">短剧婴儿演员片酬曝光；这价格惊呆不少打工人。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">7</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">天津虫姥把房子住成仓库</div>
+                            <div class="news-summary">天津大爷把家住成奇葩样；满屋虫子也是绝活。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">8</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">欧阳娣娣新物料引发颜值比拼</div>
+                            <div class="news-summary">欧阳娜娜妹妹新照曝光；网友热议姐妹谁更美。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">9</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">大叔卖6元四寸蛋糕日收几百</div>
+                            <div class="news-summary">小尺寸蛋糕便宜又实惠；大叔的生意经火了。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">10</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">北京突降鹅毛大雪</div>
+                            <div class="news-summary">北京迎来今冬大雪；雪景美图刷屏朋友圈。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">11</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">男子飞机上睡30分钟卡被盗刷</div>
+                            <div class="news-summary">飞机小睡醒来卡被盗；盗刷手段防不胜防。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">12</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">幼师女友日常萌翻网友</div>
+                            <div class="news-summary">幼师女友的可爱日常；这种女朋友谁不想要。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">13</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">酒店床上为何放四个枕头</div>
+                            <div class="news-summary">酒店床铺配置引好奇；四个枕头原来有讲究。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">14</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">两乞丐街头乞讨相爱五年</div>
+                            <div class="news-summary">情侣乞讨存下32万；这剧情比电影还狗血。</div>
+                        
+                    </div>
+                </li>
+                
+                <li class="news-item">
+                    <div class="news-index">15</div>
+                    <div class="news-text">
+                        
+                            <div class="news-title">保剑锋曾因拒接电话被捅伤</div>
+                            <div class="news-summary">汪海林曝保剑锋旧事；拒接电话代价太大了。</div>
+                        
+                    </div>
+                </li>
+                
+            </ul>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            
+            <div class="quote-box">
+                <div class="quote-text">生活就像钻石，看着硬核，其实都在看怎么保值。</div>
+                
+            </div>
+            
+        </div>
+    </div>
+</body>
+</html>
