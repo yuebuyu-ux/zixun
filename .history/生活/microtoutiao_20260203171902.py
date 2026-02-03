@@ -1,0 +1,452 @@
+import argparse
+import asyncio
+import datetime
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from playwright.async_api import async_playwright
+
+
+API_KEY = "ms-b8df244e-aa5e-4392-b3bf-4b0e0f80c052"
+API_BASE_URL = "https://api-inference.modelscope.cn/v1"
+MODEL_NAME = "ZhipuAI/GLM-4.7"
+DOUYIN_VIDEO_URL = "https://v.douyin.com/rfX-woUJtcs/"
+
+
+def _env(name, default_value=""):
+    value = os.environ.get(name)
+    if value is None:
+        return default_value
+    value = value.strip()
+    return value if value else default_value
+
+
+def _join_url(base, path):
+    base = (base or "").strip()
+    path = (path or "").strip()
+    if not base:
+        return path
+    if base.endswith("/"):
+        base = base[:-1]
+    if not path.startswith("/"):
+        path = "/" + path
+    return base + path
+
+
+def _clean_json_text(text):
+    result = (text or "").replace("```json", "").replace("```", "").strip()
+    result = re.sub(r':\s*“', ': "', result)
+    result = re.sub(r'”\s*,', '",', result)
+    result = re.sub(r'”\s*}', '"}', result)
+    result = re.sub(r'”\s*]', '"]', result)
+    return result
+
+
+def _safe_filename(value):
+    value = (value or "").strip()
+    if not value:
+        return "untitled"
+    value = re.sub(r'[<>:"/\\|?*\x00-\x1F]+', "_", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value[:80] if len(value) > 80 else value
+
+
+def _write_json(path, data_obj):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data_obj, f, ensure_ascii=False, indent=2)
+
+
+def _clip_text(text, limit=12000):
+    s = str(text or "")
+    if len(s) <= limit:
+        return s
+    return s[:limit]
+
+
+async def fetch_page_inner_text(url, manual=False, min_len=500, wait_ms=4000):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=not manual)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            locale="zh-CN",
+        )
+        page = await context.new_page()
+        try:
+            await page.goto(url, timeout=60000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(wait_ms)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+
+            text = ""
+            try:
+                text = await page.inner_text("body")
+            except Exception:
+                text = ""
+            text_l = text.lower()
+            need_manual = (
+                len(text) < min_len
+                or "just a moment" in text_l
+                or "verify" in text_l
+                or "captcha" in text_l
+                or "验证码" in text
+                or "安全验证" in text
+            )
+            if manual and need_manual:
+                print("\n" + "=" * 50, flush=True)
+                print("【需要人工介入】页面可能触发验证。", flush=True)
+                print(f"已打开：{url}", flush=True)
+                print("=" * 50 + "\n", flush=True)
+                if sys.stdin and sys.stdin.isatty():
+                    await asyncio.to_thread(input, ">> 完成验证并看到内容后，按【回车键】继续...")
+                await page.wait_for_timeout(2000)
+                try:
+                    text = await page.inner_text("body")
+                except Exception:
+                    text = ""
+            return text
+        finally:
+            await browser.close()
+
+
+async def fetch_douyin_video_page_text(video_url, allow_manual=True):
+    text = await fetch_page_inner_text(video_url, manual=False, min_len=400)
+    if text and len(text) >= 400:
+        return text
+    if allow_manual:
+        return await fetch_page_inner_text(video_url, manual=True, min_len=400)
+    return text or ""
+
+
+def call_llm_chat(messages, model, temperature=0.2):
+    api_key = _env("API_KEY", API_KEY)
+    api_base_url = _env("API_BASE_URL", API_BASE_URL)
+    if not api_key:
+        raise RuntimeError("缺少 API_KEY 环境变量")
+
+    url = _join_url(api_base_url, "/chat/completions")
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "stream": False,
+    }
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json; charset=utf-8",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        raise RuntimeError(f"LLM HTTPError {e.code}: {body[:1200]}") from e
+    except Exception as e:
+        raise RuntimeError(f"LLM 请求失败: {e}") from e
+
+    try:
+        obj = json.loads(raw)
+    except Exception as e:
+        raise RuntimeError(f"LLM 响应不是 JSON: {raw[:1200]}") from e
+    choices = obj.get("choices") or []
+    if not choices:
+        raise RuntimeError(f"LLM 响应缺少 choices: {raw[:1200]}")
+    message = (choices[0] or {}).get("message") or {}
+    content = message.get("content") or ""
+    return str(content).strip()
+
+
+def analyze_douyin_video(payload, model):
+    prompt = f"""
+你是一位短视频运营专家 + 今日头条微头条写作教练。请基于我提供的“抖音视频链接 + 页面文本抓取结果”，做视频内容归纳与可执行拆解，并输出一份可直接用于写作的结构化 JSON。
+
+硬性要求：
+1) 只允许使用输入中出现的信息，不能凭空编造具体剧情、人物经历、视频画面与音频细节。
+2) 如果某项信息无法从输入判断，必须输出“未知”，并给出“需在看过视频后验证的检查点”。
+3) 输出必须是纯 JSON，不能包含 Markdown、解释文字、代码块标记。
+
+目标：
+1) 以输入 JSON 中的 video_url 指向的视频为唯一素材入口，不允许另起炉灶换题。
+2) 在无法确定事实时，用“未知”并输出 unknown_checkpoints，方便我后续人工核验。
+3) 产出：关键词矩阵、情绪/争议点、二创建议、合规风险提示、以及文章写作计划（标题备选+更细的五段式要点）。
+
+写作计划要求：
+1) titles 必须输出 3 个不同角度标题，且每个标题前 10 个字包含 chosen_keyword。
+2) outline 的每个 part.notes 必须写得“可直接照着写”，至少 80 字，包含：场景/人物/冲突/情绪/一句可加粗的金句草稿。
+
+输出 JSON Schema（必须严格遵守字段名）：
+{{
+  "chosen_keyword": "string",
+  "chosen_reason": "string",
+  "chosen_videos": [
+    {{"url":"string","title":"string","why":"string"}}
+  ],
+  "unknown_checkpoints": ["string"],
+  "framework": {{
+    "text_layer": "string",
+    "visual_layer": "string",
+    "audio_layer": "string",
+    "interaction_layer": "string",
+    "traffic_layer": "string"
+  }},
+  "burst_keywords": {{
+    "sensitivity": "普通|热门|现象级",
+    "controversy": "普通|热门|现象级",
+    "virality": "普通|热门|现象级",
+    "phrases": ["string"],
+    "templates": ["string"]
+  }},
+  "keyword_matrix": [
+    {{"theme":"string","keywords":["string"]}}
+  ],
+  "comments_emotion": {{
+    "likely_emotions": ["string"],
+    "possible_conflicts": ["string"]
+  }},
+  "secondary_creation": {{
+    "angles": ["string"],
+    "cta_questions": ["string"]
+  }},
+  "compliance": {{
+    "risk_points": ["string"],
+    "safe_wording": ["string"]
+  }},
+  "article_plan": {{
+    "audience": "string",
+    "titles": ["string","string","string"],
+    "outline": [
+      {{"part":"hook","notes":"string"}},
+      {{"part":"pain","notes":"string"}},
+      {{"part":"reveal","notes":"string"}},
+      {{"part":"climax","notes":"string"}},
+      {{"part":"ending","notes":"string"}}
+    ],
+    "hashtags": ["string"]
+  }}
+}}
+
+输入数据：
+{json.dumps(payload, ensure_ascii=False)}
+"""
+
+    content = call_llm_chat(
+        messages=[
+            {"role": "system", "content": "你擅长热点选题、短视频拆解与微头条写作。"},
+            {"role": "user", "content": prompt},
+        ],
+        model=model,
+        temperature=0.2,
+    )
+    cleaned = _clean_json_text(content)
+    return json.loads(cleaned)
+
+
+def write_microtoutiao(analysis_json, model, min_len, max_len):
+    keyword = (analysis_json or {}).get("chosen_keyword") or ""
+    prompt = f"""
+你是一位拥有10年经验的新媒体运营总监，同时是今日头条百万粉丝账号御用写手。你精通爆款文章的底层逻辑，深谙人性痛点与流量密码。请根据我提供的“选题分析 JSON”，写一篇更丰富、更完整、可直接发布的文章。
+
+硬性要求：
+1) 只允许基于 analysis_json 中给出的事实/判断写作；不能编造具体人物姓名、机构内幕、精确数据与时间点。
+2) 允许使用“某研究院/业内人士/不少人/很多家庭”等模糊化表达，但必须避免绝对化口吻（例如“研究表明”“专家指出”）。
+3) 禁止出现“作为一名AI”相关表述。
+4) 结构使用黄金五段式：hook / pain / reveal / climax / ending，但不要用“小标题：第一段/第二段”这类显眼标签。
+5) 正文长度（不含标题）必须在 {min_len}-{max_len} 字，不能偏短。
+6) 标题：从 analysis_json.article_plan.titles 中选 1 个做最终标题，并保证标题前 10 个字包含核心关键词“{keyword}”（若不满足请微调但不改变含义）。
+7) 关键词自然植入 8-12 次，避免堆砌；段落短（每段不超过3行），但信息密度要高。
+8) 必须包含 2-3 句可加粗的爆款金句（用 Markdown **加粗**）。
+9) 结尾必须用问句引导评论；并在文末输出 3-6 个 hashtags（从 analysis_json.article_plan.hashtags 选，必要时可少量微调）。
+10) 绝对禁止使用“首先/其次/最后/综上所述/总之/近年来/随着”等模板词作为段落开头。
+11) 只输出 Markdown：第一行是标题（# 标题），正文为普通段落；不要输出任何额外说明或统计信息。
+
+段落字数配比（用于写得更饱满；按正文总字数自行换算。以 2000 字为例：hook 200-300，pain 400-500，reveal 700-900，climax 300-400，ending 160-240）：
+- hook（钩子开头｜约占 10%-15%）：用“场景 + 冲突 + 悬念”把人拽住。必须在前 3 句丢出反常识/利益冲突/一句刺痛人的判断；快速交代人物（用“我邻居/我二舅/楼下王姐”这种泛称）、时间锚点（“上周/去年夏天/春节前后”）和矛盾点；结尾抛一个问题或留白，逼读者继续往下看。
+- pain（痛点放大｜约占 20%-25%）：把受众最熟悉的焦虑说透，至少给 2-3 个生活化小案例（家庭、工作、钱、面子、孩子、婚恋任选其二），每个案例都要落到“我为什么共鸣/为什么憋屈/为什么不甘心”；至少写 1 句可加粗金句草稿；多用短句、反问、排比，但不要空喊口号。
+- reveal（揭秘/反转｜约占 35%-45%，全文核心写足）：把“信息差”一次性端出来，至少输出 3 个观点（用 1/2/3 分点），每个观点都要包含：①一个模糊但像真的数据/比例/趋势（如“七成左右/73.6%/很多小县城都这样”）；②一个生活化人物片段（我同学/王姐/我老婆的同事）；③一个“说白了就是……”的通俗解释；④一个可执行建议（怎么做/怎么避坑/怎么自保）。这一段写不够，全文必短。
+- climax（情绪高潮｜约占 15%-20%）：把价值观冲突推到顶点（例如“体面 vs 现实”“面子 vs 里子”“孩子 vs 夫妻”“规矩 vs 人情”），用“戳穿一个真相/更扎心的是/说白了”制造爆点；至少再给 1 句可加粗金句草稿；允许情绪强，但不要极端攻击、不要指名道姓。
+- ending（互动结尾｜约占 8%-12%）：收束观点，给读者一个“站队入口”。必须以问句结尾，引导评论；同时给出 2 个对立选项或争议点（A/B），让读者更愿意吵起来但不违规；文末跟上 hashtags。
+
+analysis_json：
+{json.dumps(analysis_json, ensure_ascii=False)}
+"""
+    return call_llm_chat(
+        messages=[
+            {"role": "system", "content": "你擅长把热点写成高转发微头条。"},
+            {"role": "user", "content": prompt},
+        ],
+        model=model,
+        temperature=0.65,
+    )
+
+
+def polish_article_markdown(article_md, analysis_json, model):
+    prompt = f"""
+你是一位资深新媒体总编。请对我提供的微头条 Markdown 进行排版与润色，要求：
+1) 不添加任何新事实，不编造具体人物、机构内幕、精确数据与时间点；
+2) 保留原文观点框架，但让表达更自然、更抓人；
+3) 段落短一些（每段不超过3行），关键金句可加粗；
+4) 保持 Markdown：第一行是 # 标题；正文用自然段；末尾保留 hashtags；
+5) 不要输出任何解释，只输出最终 Markdown。
+
+analysis_json：
+{json.dumps(analysis_json, ensure_ascii=False)}
+
+原文 Markdown：
+{article_md}
+"""
+    return call_llm_chat(
+        messages=[
+            {"role": "system", "content": "你擅长把文章排版得更适合手机阅读。"},
+            {"role": "user", "content": prompt},
+        ],
+        model=model,
+        temperature=0.35,
+    ).strip()
+
+
+def review_and_fix_article(article_md, analysis_json, model, min_len, max_len):
+    prompt = f"""
+你是内容质检编辑。请检查并修正我提供的微头条 Markdown，使其更符合平台分发与合规要求。
+
+必须满足：
+1) 不新增任何事实，不编造具体人物、机构内幕、精确数据与时间点；
+2) 不出现“作为一名AI”等措辞；
+3) 标题前10个字包含核心关键词（analysis_json.chosen_keyword），如果不满足请修正标题；
+4) 正文长度（不含标题）控制在 {min_len}-{max_len} 字，不能偏短；
+5) 段落短、信息密度高；至少保留 2 句 **加粗金句**；结尾必须是问句引导评论；文末保留 3-6 个 hashtags；
+6) 只输出最终 Markdown，不要解释。
+
+analysis_json：
+{json.dumps(analysis_json, ensure_ascii=False)}
+
+原文 Markdown：
+{article_md}
+"""
+    return call_llm_chat(
+        messages=[
+            {"role": "system", "content": "你擅长合规检查与爆款表达优化。"},
+            {"role": "user", "content": prompt},
+        ],
+        model=model,
+        temperature=0.25,
+    ).strip()
+
+
+async def cmd_run(args):
+    model = _env("MODEL_NAME", MODEL_NAME)
+    video_url = (args.douyin_url or "").strip() or (DOUYIN_VIDEO_URL or "").strip()
+    if not video_url:
+        raise RuntimeError("请在脚本顶部设置 DOUYIN_VIDEO_URL，或运行时传入 --douyin-url")
+
+    run_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    json_path = args.json_path
+    if not json_path:
+        json_path = os.path.join(args.out_dir, f"过程_{run_ts}.json")
+
+    print(f"抓取抖音页面：{video_url}", flush=True)
+    page_text = await fetch_douyin_video_page_text(video_url, allow_manual=not args.no_manual_video)
+    payload = {
+        "date": datetime.datetime.now().strftime("%Y-%m-%d"),
+        "video_url": video_url,
+        "video_page_text_len": len(page_text or ""),
+        "video_page_text_excerpt": _clip_text(page_text, limit=args.max_page_chars),
+        "constraints": {"audience": "30-55岁三四线城市用户为主"},
+        "params": {
+            "min_len": args.min_len,
+            "max_len": args.max_len,
+            "no_manual_video": args.no_manual_video,
+            "max_page_chars": args.max_page_chars,
+        },
+    }
+    _write_json(json_path, {"stage": "payload", "payload": payload})
+
+    print("正在请求 AI 分析视频并生成写作计划...", flush=True)
+    analysis = analyze_douyin_video(payload, model=model)
+    _write_json(json_path, {"stage": "analysis", "payload": payload, "analysis": analysis})
+
+    print("正在请求 AI 生成微头条文章...", flush=True)
+    article_md = write_microtoutiao(analysis, model=model, min_len=args.min_len, max_len=args.max_len).strip()
+    if not article_md:
+        raise RuntimeError("生成内容为空")
+    _write_json(
+        json_path,
+        {"stage": "draft", "payload": payload, "analysis": analysis, "draft_markdown": article_md},
+    )
+
+    print("正在请求 AI 进行最终排版润色...", flush=True)
+    article_md = polish_article_markdown(article_md, analysis_json=analysis, model=model)
+    _write_json(
+        json_path,
+        {"stage": "polished", "payload": payload, "analysis": analysis, "polished_markdown": article_md},
+    )
+
+    print("正在进行质量检查与最终修正...", flush=True)
+    article_md = review_and_fix_article(article_md, analysis_json=analysis, model=model, min_len=args.min_len, max_len=args.max_len)
+
+    base_out_dir = args.out_dir
+    article_dir = os.path.join(base_out_dir, "文章")
+    os.makedirs(article_dir, exist_ok=True)
+    date_str = datetime.datetime.now().strftime("%Y年%m月%d日")
+    chosen_kw = _safe_filename((analysis or {}).get("chosen_keyword") or "热点")
+    out_path = os.path.join(article_dir, f"微头条_{date_str}_{chosen_kw}.md")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(article_md + "\n")
+    print(f"微头条已生成: {out_path}", flush=True)
+    _write_json(
+        json_path,
+        {
+            "stage": "final",
+            "payload": payload,
+            "analysis": analysis,
+            "final_markdown": article_md,
+            "output_markdown_path": out_path,
+        },
+    )
+    print(f"过程 JSON 已保存: {json_path}", flush=True)
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--douyin-url", default="")
+    parser.add_argument("--no-manual-video", action="store_true", default=False)
+    parser.add_argument("--out-dir", default=r"d:\zixun\生活")
+    parser.add_argument("--min-len", type=int, default=1800)
+    parser.add_argument("--max-len", type=int, default=2500)
+    parser.add_argument("--max-page-chars", type=int, default=12000)
+    parser.add_argument("--json-path", default="")
+
+    return parser
+
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        asyncio.run(cmd_run(args))
+        return 0
+    except KeyboardInterrupt:
+        return 130
+    except Exception as e:
+        print(f"错误: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
